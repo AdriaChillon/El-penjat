@@ -1,140 +1,165 @@
-// Espera a que se cargue el contenido de la página antes de ejecutar el código
 document.addEventListener("DOMContentLoaded", function () {
-
     // Configuración constante del juego
     var gameConfig = {
         liveLook: ["./img/monster5.png", "./img/monster4.png", "./img/monster3.png", "./img/monster2.png", "./img/monster1.png", "./img/monster0.png"],
-        wordsToGuess: ["elefant", "criatura", "llapis", "maduixa", "ordinador", "teclat", "ratoli", "pantalla", "sistema", "arxiu", "programa", "curs", "taula", "video"],
         numberOfLives: 5,
-    }
+    };
 
     // Estado del juego
     var gameStatus = {
         status: "stopped",
         lives: gameConfig.numberOfLives,
-        wordToGuess: "",
         wordCompleted: "",
-    }
+        roomName: "",
+        roomPwd: "",
+        currentPlayer: "P1"
+    };
 
-    // Obtener referencias a elementos del DOM
     var divInfo = document.getElementById("info");
-    var mensajes = document.querySelectorAll(".info_msg");
-    var pista = document.getElementById("clue");
+    var mensajes = {
+        welcome: document.getElementById("welcome"),
+        success: document.getElementById("game_success"),
+        fail: document.getElementById("game_fail")
+    };
+    var btnOK = document.getElementById("btn_ok");
+    var turnIndicator = document.getElementById("turn");
 
     // Configuración inicial cuando la página se carga
     window.onload = function () {
         // Muestra un mensaje inicial
         divInfo.style.display = "block";
-        mensajes[0].style.display = "block";
+        mensajes.welcome.style.display = "block";
 
         // Configura un botón "OK" para comenzar el juego y asegura que solo se ejecute una vez
-        var okButton = document.getElementById("btn_ok");
-        okButton.addEventListener("click", function () {
+        btnOK.addEventListener("click", function () {
             divInfo.style.display = "none";
-            mensajes[0].style.display = "none";
+            mensajes.welcome.style.display = "none";
             startNewGame();
         }, { once: true });
     }
 
-    // Inicia un nuevo juego
+    var newGameButton = document.getElementById("new_game");
+    newGameButton.addEventListener("click", function () {
+        startNewGame();
+    });
+
     function startNewGame() {
-        gameStatus.lives = gameConfig.numberOfLives;
-        gameStatus.wordCompleted = "";
-        gameStatus.status = "playing";
+        gameStatus.roomName = prompt("Insereix el nom de la sala:");
+        gameStatus.roomPwd = prompt("Insereix la contrasenya de la teva sala:");
+        var data = {
+            action: "createGame",
+            gameName: gameStatus.roomName,
+            gamePassword: gameStatus.roomPwd
+        };
 
-        // Selecciona una palabra aleatoria para adivinar
-        var indexRandom = Math.floor(Math.random() * gameConfig.wordsToGuess.length);
-        gameStatus.wordToGuess = gameConfig.wordsToGuess[indexRandom];
-        console.log(gameStatus.wordToGuess);
+        fetch('https://penjat.codifi.cat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+            .then(response => response.json())
+            .then(dataRespuesta => {
+                console.log('Game created:', dataRespuesta);
+                gameStatus.status = "playing"
+                updateGameStatus();  // Update game status right after creating the game
+            })
+            .catch(error => {
+                console.error('Error creating game:', error);
+            });
+    }
 
-        // Inicializa la representación de la palabra a adivinar
-        for (var i = 0; i < gameStatus.wordToGuess.length; i++) {
-            gameStatus.wordCompleted += "_";
-        }
+    function updateGameStatus() {
+        var dataInfoGame = {
+            action: "infoGame",
+            gameName: gameStatus.roomName
+        };
 
-        // Actualiza la interfaz de usuario
-        document.getElementById("lives").innerHTML = gameConfig.numberOfLives + " LIVES LEFT";
-        document.getElementById("monster").src = gameConfig.liveLook[5];
-        document.getElementById("letters").innerHTML = gameStatus.wordCompleted;
+        fetch('https://penjat.codifi.cat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(dataInfoGame)
+        })
+            .then(response => response.json())
+            .then(dataRespuestaInfo => {
+                console.log('Game info updated:', dataRespuestaInfo);
+                gameStatus.currentPlayer = dataRespuestaInfo.player;
+                turnIndicator.textContent = "Turn: " + gameStatus.currentPlayer;
+                gameStatus.lives = dataRespuestaInfo.gameInfo.livesP1;
+                gameStatus.wordCompleted = dataRespuestaInfo.gameInfo.wordCompleted;
+
+                document.getElementById("lives").innerHTML = gameStatus.lives + " LIVES LEFT";
+                document.getElementById("letters").innerHTML = gameStatus.wordCompleted.split("").join(" ");
+                document.getElementById("monster").src = gameConfig.liveLook[gameStatus.lives];
+
+                if (gameStatus.lives === 0) {
+                    gameOver();
+                } else if (gameStatus.wordCompleted.indexOf('_') === -1) {
+                    gameWin();
+                }
+            })
+            .catch(error => console.error('Error updating game info:', error));
     }
 
     // Agrega un event listener para las teclas presionadas
-    addEventListener("keypress", function (event) {
-        // Verifica si el juego está en curso
-        if (gameStatus.status !== "playing") {
+    document.addEventListener("keypress", function (event) {
+        if (gameStatus.status !== "playing") { // Asegura que el juego está en curso y es el turno del jugador
             return;
         }
 
         var letra = event.key.toLowerCase();
-        if (/^[a-zA-Z]+$/.test(letra)) {
-            if (gameStatus.wordToGuess.includes(letra)) {
-                // Actualiza la palabra adivinada
-                gameStatus.wordCompleted = gameStatus.wordCompleted.split("");
-                for (let i = 0; i < gameStatus.wordToGuess.length; i++) {
-                    if (letra == gameStatus.wordToGuess[i]) {
-                        gameStatus.wordCompleted[i] = letra;
+        if (/^[a-z]$/.test(letra)) { // Verifica que la tecla presionada es una letra
+            playGame(letra);
+        }
+    });
+    function playGame(letra) {
+        var data = {
+            action: "playGame",
+            gameName: gameStatus.roomName,
+            word: letra,
+            player: gameStatus.currentPlayer
+        };
+
+        fetch('https://penjat.codifi.cat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+            .then(response => response.json())
+            .then(dataRespuesta => {
+                console.log('Response:', dataRespuesta);
+                if (dataRespuesta.status === "OK") {
+                    if (dataRespuesta.response.includes("incorrect")) {
+                        alert("Incorrect! You lose one life.");
+                    } else {
+                        alert("Correct!");
                     }
+                    updateGameStatus(); // Actualiza el estado del juego después de cada jugada
+                } else {
+                    console.error('Game play error:', dataRespuesta.response);
                 }
-                gameStatus.wordCompleted = gameStatus.wordCompleted.join("");
-                document.getElementById("letters").innerHTML = gameStatus.wordCompleted;
-            } else {
-                // Reduce el número de vidas y actualiza la interfaz
-                gameStatus.lives--;
-                document.getElementById("monster").src = gameConfig.liveLook[gameStatus.lives];
-                document.getElementById("lives").innerHTML = gameStatus.lives + " LIVES LEFT ";
-            }
-
-            // Comprueba si el juego ha terminado (ya sea por derrota o victoria)
-            if (gameStatus.lives == 0) {
-                gameOver();
-            }
-            if (gameStatus.wordCompleted == gameStatus.wordToGuess) {
-                gameWin();
-            }
-        }
-    });
-
-    // Agrega un event listener para mostrar una pista al pasar el mouse
-    pista.addEventListener("mouseenter", function () {
-        if (gameStatus.status == "playing") {
-            // Muestra una pista al revelar una letra no adivinada
-            var letrasRestantes = [];
-            for (var i = 0; i < gameStatus.wordToGuess.length; i++) {
-                if (gameStatus.wordCompleted[i] === "_") {
-                    letrasRestantes.push(i);
-                }
-            }
-            var randomIndex = letrasRestantes[Math.floor(Math.random() * letrasRestantes.length)];
-            pista.getElementsByTagName("span")[0].innerHTML = gameStatus.wordToGuess[randomIndex];
-            gameStatus.lives--;
-
-            // Actualiza la interfaz
-            document.getElementById("lives").innerHTML = gameStatus.lives + " LIVES LEFT";
-            document.getElementById("monster").src = gameConfig.liveLook[gameStatus.lives];
-
-            // Comprueba si el juego ha terminado
-            if (gameStatus.lives === 0) {
-                gameOver();
-            }
-        }
-    });
-
-    // Restablece la pista cuando se retira el mouse
-    pista.addEventListener("mouseleave", function () {
-        pista.getElementsByTagName("span")[0].innerHTML = "?";
-    });
+            })
+            .catch(error => {
+                console.error('Error playing game:', error);
+            });
+    }
 
     // Finaliza el juego y muestra un mensaje de derrota
     function gameOver() {
         divInfo.style.display = "block";
-        mensajes[2].style.display = "block";
+        mensajes.fail.style.display = "block";
         gameStatus.status = "stopped";
 
         // Configura el botón "OK" para reiniciar el juego
         var okButton = document.getElementById("btn_ok");
         okButton.addEventListener("click", function () {
             divInfo.style.display = "none";
-            mensajes[2].style.display = "none";
+            mensajes.fail.style.display = "none";
             gameStatus.status = "stopped";
         });
     }
@@ -142,7 +167,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Finaliza el juego y muestra un mensaje de victoria
     function gameWin() {
         divInfo.style.display = "block";
-        mensajes[1].style.display = "block";
+        mensajes.success.style.display = "block";
         gameStatus.status = "stopped";
 
         // Configura el botón "OK" para reiniciar el juego
@@ -150,13 +175,7 @@ document.addEventListener("DOMContentLoaded", function () {
         okButton.addEventListener("click", function () {
             divInfo.style.display = "none";
             gameStatus.status = "stopped";
-            mensajes[1].style.display = "none";
+            mensajes.success.style.display = "none";
         });
     }
-
-    // Agrega un event listener al botón "new_game" para comenzar un nuevo juego
-    var newGame = document.getElementById("new_game");
-    newGame.addEventListener("click", function () {
-        startNewGame();
-    });
-})
+});
