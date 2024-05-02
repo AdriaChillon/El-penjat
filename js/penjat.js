@@ -1,53 +1,60 @@
+// Cuando el DOM está completamente cargado, se ejecuta la función anónima
 document.addEventListener("DOMContentLoaded", function () {
-    // Configuración constante del juego
+    // Se define la configuración del juego
     var gameConfig = {
         liveLook: ["./img/monster5.png", "./img/monster4.png", "./img/monster3.png", "./img/monster2.png", "./img/monster1.png", "./img/monster0.png"],
-        numberOfLives: 5,
+        numberOfLives: 5
     };
 
-    // Estado del juego
+    // Se define el estado del juego inicial
     var gameStatus = {
         status: "stopped",
-        lives: gameConfig.numberOfLives,
-        wordCompleted: "",
+        livesP1: gameConfig.numberOfLives,
+        livesP2: gameConfig.numberOfLives,
+        wordCompletedP1: "",
+        wordCompletedP2: "",
         roomName: "",
         roomPwd: "",
-        currentPlayer: "P1"
+        currentPlayer: "P1",
+        isCreator: null
     };
 
+    // Se obtienen elementos del DOM
     var divInfo = document.getElementById("info");
-    var mensajes = {
-        welcome: document.getElementById("welcome"),
-        success: document.getElementById("game_success"),
-        fail: document.getElementById("game_fail")
-    };
-    var btnOK = document.getElementById("btn_ok");
+    var success = document.getElementById("game_success");
     var turnIndicator = document.getElementById("turn");
+    var livesIndicator = document.getElementById("lives");
+    var wordIndicator = document.getElementById("letters");
+    var monsterImage = document.getElementById("monster");
 
-    // Configuración inicial cuando la página se carga
-    window.onload = function () {
-        // Muestra un mensaje inicial
-        divInfo.style.display = "block";
-        mensajes.welcome.style.display = "block";
-
-        // Configura un botón "OK" para comenzar el juego y asegura que solo se ejecute una vez
-        btnOK.addEventListener("click", function () {
-            divInfo.style.display = "none";
-            mensajes.welcome.style.display = "none";
-            startNewGame();
-        }, { once: true });
-    }
-
-    var newGameButton = document.getElementById("new_game");
-    newGameButton.addEventListener("click", function () {
-        startNewGame();
+    // Evento click para crear un nuevo juego
+    document.getElementById("create_game").addEventListener("click", function () {
+        startNewGame(true);
     });
 
-    function startNewGame() {
-        gameStatus.roomName = prompt("Insereix el nom de la sala:");
-        gameStatus.roomPwd = prompt("Insereix la contrasenya de la teva sala:");
+    // Evento click para unirse a un juego existente
+    document.getElementById("join_game").addEventListener("click", function () {
+        startNewGame(false);
+    });
+
+    // Función para configurar un nuevo juego
+    function configureNewGame(isCreator) {
+        // Se establece si el jugador es el creador o se une al juego
+        gameStatus.isCreator = isCreator;
+        var actionType = isCreator ? "createGame" : "joinGame";
+        
+        // Se solicita al usuario ingresar el nombre y contraseña de la sala
+        if (isCreator) {
+            gameStatus.roomName = prompt("Ingresa el nombre de la sala:");
+            gameStatus.roomPwd = prompt("Ingresa la contraseña de tu sala:");
+        } else {
+            gameStatus.roomName = prompt("Ingresa el nombre de la sala:");
+            gameStatus.roomPwd = prompt("Ingresa la contraseña para unirte a la sala:");
+        }
+
+        // Se envía la solicitud al servidor
         var data = {
-            action: "createGame",
+            action: actionType,
             gameName: gameStatus.roomName,
             gamePassword: gameStatus.roomPwd
         };
@@ -59,23 +66,39 @@ document.addEventListener("DOMContentLoaded", function () {
             },
             body: JSON.stringify(data)
         })
-            .then(response => response.json())
-            .then(dataRespuesta => {
-                console.log('Game created:', dataRespuesta);
-                gameStatus.status = "playing"
-                updateGameStatus();  // Update game status right after creating the game
-            })
-            .catch(error => {
-                console.error('Error creating game:', error);
-            });
+        .then(response => response.json())
+        .then(dataRespuesta => {
+            console.log(actionType + ' response:', dataRespuesta);
+            // Se actualiza el estado del juego y el turno del jugador
+            gameStatus.status = "playing";
+            gameStatus.currentPlayer = isCreator ? "P1" : "P2";
+            updateGameStatus();
+        })
+        .catch(error => {
+            console.error('Error in ' + actionType, error);
+        });
     }
 
+    // Función para iniciar un nuevo juego
+    function startNewGame(isCreator) {
+        configureNewGame(isCreator);
+    }
+
+    // Se ejecuta la actualización del juego cada 2 segundos
+    setInterval(function () {
+        if (gameStatus.status === "playing") {
+            updateGameStatus();
+        }
+    }, 2000);
+
+    // Función para actualizar el estado del juego
     function updateGameStatus() {
+        // Se envía una solicitud para obtener información del juego al servidor
         var dataInfoGame = {
             action: "infoGame",
             gameName: gameStatus.roomName
         };
-
+    
         fetch('https://penjat.codifi.cat', {
             method: 'POST',
             headers: {
@@ -83,39 +106,77 @@ document.addEventListener("DOMContentLoaded", function () {
             },
             body: JSON.stringify(dataInfoGame)
         })
-            .then(response => response.json())
-            .then(dataRespuestaInfo => {
-                console.log('Game info updated:', dataRespuestaInfo);
-                gameStatus.currentPlayer = dataRespuestaInfo.player;
-                turnIndicator.textContent = "Turn: " + gameStatus.currentPlayer;
-                gameStatus.lives = dataRespuestaInfo.gameInfo.livesP1;
-                gameStatus.wordCompleted = dataRespuestaInfo.gameInfo.wordCompleted;
-
-                document.getElementById("lives").innerHTML = gameStatus.lives + " LIVES LEFT";
-                document.getElementById("letters").innerHTML = gameStatus.wordCompleted.split("").join(" ");
-                document.getElementById("monster").src = gameConfig.liveLook[gameStatus.lives];
-
-                if (gameStatus.lives === 0) {
-                    gameOver();
-                } else if (gameStatus.wordCompleted.indexOf('_') === -1) {
-                    gameWin();
-                }
-            })
-            .catch(error => console.error('Error updating game info:', error));
+        .then(response => response.json())
+        .then(dataRespuestaInfo => {
+            console.log('Game info updated:', dataRespuestaInfo);
+            // Se actualiza la interfaz de usuario con la información del juego
+            gameStatus.currentPlayer = dataRespuestaInfo.player;
+            turnIndicator.textContent = "Turno: " + gameStatus.currentPlayer;
+            gameStatus.livesP1 = dataRespuestaInfo.gameInfo.livesP1;
+            gameStatus.livesP2 = dataRespuestaInfo.gameInfo.livesP2;
+            var currentPlayerLives = gameStatus.isCreator ? gameStatus.livesP1 : gameStatus.livesP2;
+            livesIndicator.innerHTML = currentPlayerLives + " LIVES LEFT";
+            var wordProgress = dataRespuestaInfo.gameInfo.wordCompleted;
+            wordIndicator.innerHTML = wordProgress;
+            monsterImage.src = gameConfig.liveLook[currentPlayerLives];
+            // Se verifica si el juego ha terminado y se muestra el resultado
+            if(gameStatus.currentPlayer == "P1") {
+                var winner = "P2"
+                var loser = "P1"
+            } else {
+                var winner = "P1"
+                var loser = "P2"
+            }
+            
+            if (!wordProgress.includes('_')) {
+                showResults(winner, loser);
+            } else if (currentPlayerLives === 0) {
+                showResults(loser, winner);
+            }
+        })
+        .catch(error => console.error('Error updating game info:', error));
     }
-
-    // Agrega un event listener para las teclas presionadas
+    
+    // Función para mostrar los resultados del juego
+    function showResults(winner, loser) {
+        divInfo.style.display = "block";
+        success.style.display = "block";
+        success.textContent = winner + " ha guanyat!" + " I el " + loser + " ha perdut!!";
+        gameStatus.status = "stopped";
+    
+        var okButton = document.getElementById("btn_ok");
+        okButton.onclick = function () {
+            divInfo.style.display = "none";
+            success.style.display = "none";
+            gameStatus.status = "stopped";
+        };
+    }
+    
+    // Evento de tecla presionada para jugar
     document.addEventListener("keypress", function (event) {
-        if (gameStatus.status !== "playing") { // Asegura que el juego está en curso y es el turno del jugador
+        // Se verifica si es el turno del jugador y el juego está en curso
+        if (gameStatus.status !== "playing" || gameStatus.currentPlayer !== (gameStatus.isCreator ? "P1" : "P2")) {
+            console.log("No es tu turno o el juego no está activo.");
             return;
         }
 
+        // Se obtiene la letra presionada
         var letra = event.key.toLowerCase();
-        if (/^[a-z]$/.test(letra)) { // Verifica que la tecla presionada es una letra
+        // Se verifica si la tecla presionada es una letra
+        if (/^[a-z]$/.test(letra)) {
             playGame(letra);
         }
     });
+
+    // Función para jugar una letra
     function playGame(letra) {
+        // Se verifica si es el turno del jugador
+        if (gameStatus.currentPlayer !== (gameStatus.isCreator ? "P1" : "P2")) {
+            alert("¡No es tu turno!");
+            return;
+        }
+
+        // Se envía la letra jugada al servidor
         var data = {
             action: "playGame",
             gameName: gameStatus.roomName,
@@ -130,52 +191,17 @@ document.addEventListener("DOMContentLoaded", function () {
             },
             body: JSON.stringify(data)
         })
-            .then(response => response.json())
-            .then(dataRespuesta => {
-                console.log('Response:', dataRespuesta);
-                if (dataRespuesta.status === "OK") {
-                    if (dataRespuesta.response.includes("incorrect")) {
-                        alert("Incorrect! You lose one life.");
-                    } else {
-                        alert("Correct!");
-                    }
-                    updateGameStatus(); // Actualiza el estado del juego después de cada jugada
-                } else {
-                    console.error('Game play error:', dataRespuesta.response);
-                }
-            })
-            .catch(error => {
-                console.error('Error playing game:', error);
-            });
-    }
-
-    // Finaliza el juego y muestra un mensaje de derrota
-    function gameOver() {
-        divInfo.style.display = "block";
-        mensajes.fail.style.display = "block";
-        gameStatus.status = "stopped";
-
-        // Configura el botón "OK" para reiniciar el juego
-        var okButton = document.getElementById("btn_ok");
-        okButton.addEventListener("click", function () {
-            divInfo.style.display = "none";
-            mensajes.fail.style.display = "none";
-            gameStatus.status = "stopped";
-        });
-    }
-
-    // Finaliza el juego y muestra un mensaje de victoria
-    function gameWin() {
-        divInfo.style.display = "block";
-        mensajes.success.style.display = "block";
-        gameStatus.status = "stopped";
-
-        // Configura el botón "OK" para reiniciar el juego
-        var okButton = document.getElementById("btn_ok");
-        okButton.addEventListener("click", function () {
-            divInfo.style.display = "none";
-            gameStatus.status = "stopped";
-            mensajes.success.style.display = "none";
+        .then(response => response.json())
+        .then(dataRespuesta => {
+            console.log('Response:', dataRespuesta);
+            if (dataRespuesta.status === "OK") {
+                updateGameStatus();
+            } else {
+                console.error('Error en la jugada:', dataRespuesta.response);
+            }
+        })
+        .catch(error => {
+            console.error('Error jugando:', error);
         });
     }
 });
